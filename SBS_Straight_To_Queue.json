@@ -1,0 +1,317 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "0b20636f-37e0-4291-add5-6e95e4b28a08",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": -560,
+      "y": 25.6
+    },
+    "ActionMetadata": {
+      "1d8d76db-49ca-496e-8488-963550cd5102": {
+        "position": {
+          "x": 919.2,
+          "y": -16
+        }
+      },
+      "28612cc9-3cee-4f2b-9313-46ce3db0e7e4": {
+        "position": {
+          "x": 1147.2,
+          "y": -22.4
+        }
+      },
+      "991d4b6b-64c7-48c0-8bae-865d9b5a6a30": {
+        "position": {
+          "x": 1614.4,
+          "y": -3.2
+        }
+      },
+      "9b2404f0-256b-4af1-bf20-500ff47077c6": {
+        "position": {
+          "x": 684.8,
+          "y": 0.8
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "BasicQueue"
+          }
+        },
+        "queue": {
+          "text": "BasicQueue"
+        }
+      },
+      "Error Handling": {
+        "position": {
+          "x": 1371.2,
+          "y": -17.6
+        },
+        "isFriendlyName": true
+      },
+      "Set Main Agent View": {
+        "position": {
+          "x": 310.4,
+          "y": 41.6
+        },
+        "isFriendlyName": true,
+        "parameters": {
+          "EventHooks": {
+            "DefaultAgentUI": {
+              "displayName": "SBSGuides.Cases_partner_event"
+            }
+          }
+        }
+      },
+      "0b20636f-37e0-4291-add5-6e95e4b28a08": {
+        "position": {
+          "x": -424,
+          "y": -3.2
+        }
+      },
+      "105c3161-1ff5-460a-b4a1-63db33bd0bec": {
+        "position": {
+          "x": 62.4,
+          "y": 76
+        },
+        "dynamicParams": []
+      },
+      "e8e058d3-5633-4b49-965e-14da77118017": {
+        "position": {
+          "x": -178.4,
+          "y": -37.6
+        },
+        "conditionMetadata": [
+          {
+            "id": "a4f9ce29-8458-43bf-8af5-921728c73502",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "CHAT"
+          }
+        ]
+      },
+      "78e8757a-ab26-4f50-855f-c08b769b61f9": {
+        "position": {
+          "x": 498.4,
+          "y": -242.4
+        }
+      },
+      "c8efd4cf-98c3-440f-aa22-99e3c2238381": {
+        "position": {
+          "x": 44,
+          "y": -166.4
+        },
+        "dynamicParams": []
+      },
+      "24837a40-e130-4423-8af5-6b737bc23381": {
+        "position": {
+          "x": 275.2,
+          "y": -236.8
+        },
+        "parameters": {
+          "ContactFlowId": {
+            "displayName": "SBSGuides.Cases_partner_event"
+          }
+        },
+        "ContactFlow": {
+          "text": "SBSGuides.Cases_partner_event"
+        }
+      }
+    },
+    "Annotations": [],
+    "name": "SBS_Straight_To_Queue",
+    "description": "",
+    "type": "contactFlow",
+    "status": "published",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {
+        "Text": "Transferring"
+      },
+      "Identifier": "1d8d76db-49ca-496e-8488-963550cd5102",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "28612cc9-3cee-4f2b-9313-46ce3db0e7e4",
+        "Errors": [
+          {
+            "NextAction": "Error Handling",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "28612cc9-3cee-4f2b-9313-46ce3db0e7e4",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "Error Handling",
+        "Errors": [
+          {
+            "NextAction": "Error Handling",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "Error Handling",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "991d4b6b-64c7-48c0-8bae-865d9b5a6a30",
+      "Type": "EndFlowExecution",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:ap-southeast-1:719724892945:instance/867738fb-f39f-45fc-9c0c-874ccb57c4bf/queue/387129d3-c34f-4bf7-ad86-820a7987862f"
+      },
+      "Identifier": "9b2404f0-256b-4af1-bf20-500ff47077c6",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "1d8d76db-49ca-496e-8488-963550cd5102",
+        "Errors": [
+          {
+            "NextAction": "Error Handling",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "Text": "Make sure you properly handle your errors in a production environment."
+      },
+      "Identifier": "Error Handling",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "991d4b6b-64c7-48c0-8bae-865d9b5a6a30",
+        "Errors": [
+          {
+            "NextAction": "991d4b6b-64c7-48c0-8bae-865d9b5a6a30",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "EventHooks": {
+          "DefaultAgentUI": "arn:aws:connect:ap-southeast-1:719724892945:instance/867738fb-f39f-45fc-9c0c-874ccb57c4bf/contact-flow/b10ffc19-1259-4794-8e27-97bc9f22d0c8"
+        }
+      },
+      "Identifier": "Set Main Agent View",
+      "Type": "UpdateContactEventHooks",
+      "Transitions": {
+        "NextAction": "9b2404f0-256b-4af1-bf20-500ff47077c6",
+        "Errors": [
+          {
+            "NextAction": "Error Handling",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "FlowLoggingBehavior": "Enabled"
+      },
+      "Identifier": "0b20636f-37e0-4291-add5-6e95e4b28a08",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": {
+        "NextAction": "e8e058d3-5633-4b49-965e-14da77118017"
+      }
+    },
+    {
+      "Parameters": {
+        "Attributes": {
+          "channel": "VOICE"
+        },
+        "TargetContact": "Current"
+      },
+      "Identifier": "105c3161-1ff5-460a-b4a1-63db33bd0bec",
+      "Type": "UpdateContactAttributes",
+      "Transitions": {
+        "NextAction": "Set Main Agent View",
+        "Errors": [
+          {
+            "NextAction": "Set Main Agent View",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "ComparisonValue": "$.Channel"
+      },
+      "Identifier": "e8e058d3-5633-4b49-965e-14da77118017",
+      "Type": "Compare",
+      "Transitions": {
+        "NextAction": "105c3161-1ff5-460a-b4a1-63db33bd0bec",
+        "Conditions": [
+          {
+            "NextAction": "c8efd4cf-98c3-440f-aa22-99e3c2238381",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CHAT"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "105c3161-1ff5-460a-b4a1-63db33bd0bec",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "78e8757a-ab26-4f50-855f-c08b769b61f9",
+      "Type": "EndFlowExecution",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "Attributes": {
+          "channel": "CHAT"
+        },
+        "TargetContact": "Current"
+      },
+      "Identifier": "c8efd4cf-98c3-440f-aa22-99e3c2238381",
+      "Type": "UpdateContactAttributes",
+      "Transitions": {
+        "NextAction": "24837a40-e130-4423-8af5-6b737bc23381",
+        "Errors": [
+          {
+            "NextAction": "24837a40-e130-4423-8af5-6b737bc23381",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "ContactFlowId": "arn:aws:connect:ap-southeast-1:719724892945:instance/867738fb-f39f-45fc-9c0c-874ccb57c4bf/contact-flow/b10ffc19-1259-4794-8e27-97bc9f22d0c8"
+      },
+      "Identifier": "24837a40-e130-4423-8af5-6b737bc23381",
+      "Type": "TransferToFlow",
+      "Transitions": {
+        "NextAction": "78e8757a-ab26-4f50-855f-c08b769b61f9",
+        "Errors": [
+          {
+            "NextAction": "78e8757a-ab26-4f50-855f-c08b769b61f9",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}
