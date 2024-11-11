@@ -1,0 +1,333 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "f1a4a766-296b-44d3-a548-75d9da59fe46",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": -168,
+      "y": 61.6
+    },
+    "ActionMetadata": {
+      "8ffe5e6d-a598-4d19-9cad-f9b6a378be4f": {
+        "position": {
+          "x": 1870.4,
+          "y": 41.6
+        }
+      },
+      "93440a33-8784-4118-8b90-457b9d2df68d": {
+        "position": {
+          "x": 1628,
+          "y": 1.6
+        }
+      },
+      "7e290aa2-92fb-4137-a0b0-64d2a746dff3": {
+        "position": {
+          "x": 1361.6,
+          "y": -19.2
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "BasicQueue"
+          }
+        },
+        "queue": {
+          "text": "BasicQueue"
+        }
+      },
+      "f1a4a766-296b-44d3-a548-75d9da59fe46": {
+        "position": {
+          "x": -42.4,
+          "y": 36.8
+        }
+      },
+      "01a8ff0b-d2b3-4fef-bb65-25d9a29d35a5": {
+        "position": {
+          "x": 188,
+          "y": 33.6
+        },
+        "parameters": {
+          "Attributes": {
+            "CustomerName": {
+              "useDynamic": true
+            },
+            "PhoneNumber": {
+              "useDynamic": true
+            }
+          }
+        },
+        "dynamicParams": [
+          "CustomerName",
+          "PhoneNumber"
+        ]
+      },
+      "0be9caca-99e1-4402-a963-c98f0d7b5ac9": {
+        "position": {
+          "x": 707.2,
+          "y": -240
+        },
+        "parameters": {
+          "ProfileRequestData": {
+            "IdentifierName": {
+              "displayName": "Full name"
+            },
+            "IdentifierValue": {
+              "useDynamic": true
+            }
+          }
+        },
+        "useDynamic": {
+          "IdentifierName": true,
+          "IdentifierValue": true
+        },
+        "customerProfilesAction": "GetCustomerProfile"
+      },
+      "43d96665-085d-4ee4-95a1-09bb04ebeb2c": {
+        "position": {
+          "x": 1076,
+          "y": 114.4
+        }
+      },
+      "8c218c01-319a-4a36-8850-83d122ca614a": {
+        "position": {
+          "x": 1074.4,
+          "y": -124
+        }
+      },
+      "2ef04aa7-e993-46f9-afdd-7636dc920e30": {
+        "position": {
+          "x": 451.2,
+          "y": -16.8
+        },
+        "conditions": [],
+        "conditionMetadata": [
+          {
+            "id": "e468e41d-c49c-4fed-8e57-db03a684f59d",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "CHAT"
+          }
+        ]
+      },
+      "1be30b26-516a-4a33-b1c2-cde79492857c": {
+        "position": {
+          "x": 712,
+          "y": 32.8
+        },
+        "parameters": {
+          "ProfileRequestData": {
+            "IdentifierName": {
+              "displayName": "Phone"
+            },
+            "IdentifierValue": {
+              "useDynamic": true
+            }
+          }
+        },
+        "useDynamic": {
+          "IdentifierName": true,
+          "IdentifierValue": true
+        },
+        "customerProfilesAction": "GetCustomerProfile"
+      }
+    },
+    "Annotations": [],
+    "name": "Partner_Bootcamp_InApp",
+    "description": "",
+    "type": "contactFlow",
+    "status": "PUBLISHED",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {},
+      "Identifier": "8ffe5e6d-a598-4d19-9cad-f9b6a378be4f",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {},
+      "Identifier": "93440a33-8784-4118-8b90-457b9d2df68d",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "8ffe5e6d-a598-4d19-9cad-f9b6a378be4f",
+        "Errors": [
+          {
+            "NextAction": "8ffe5e6d-a598-4d19-9cad-f9b6a378be4f",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "8ffe5e6d-a598-4d19-9cad-f9b6a378be4f",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:ap-southeast-1:201089190273:instance/88cf7c54-6986-47a2-9646-e01707146c2e/queue/6bbc5c1b-95c3-4bb2-8865-163d921fe257"
+      },
+      "Identifier": "7e290aa2-92fb-4137-a0b0-64d2a746dff3",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "93440a33-8784-4118-8b90-457b9d2df68d",
+        "Errors": [
+          {
+            "NextAction": "93440a33-8784-4118-8b90-457b9d2df68d",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "FlowLoggingBehavior": "Enabled"
+      },
+      "Identifier": "f1a4a766-296b-44d3-a548-75d9da59fe46",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": {
+        "NextAction": "01a8ff0b-d2b3-4fef-bb65-25d9a29d35a5"
+      }
+    },
+    {
+      "Parameters": {
+        "Attributes": {
+          "CustomerName": "$.Attributes.HostedWidget-customerName",
+          "PhoneNumber": "$.Attributes.HostedWidget-phoneNumber"
+        },
+        "TargetContact": "Current"
+      },
+      "Identifier": "01a8ff0b-d2b3-4fef-bb65-25d9a29d35a5",
+      "Type": "UpdateContactAttributes",
+      "Transitions": {
+        "NextAction": "2ef04aa7-e993-46f9-afdd-7636dc920e30",
+        "Errors": [
+          {
+            "NextAction": "2ef04aa7-e993-46f9-afdd-7636dc920e30",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "ProfileRequestData": {
+          "IdentifierName": "_fullName",
+          "IdentifierValue": "$.Attributes.CustomerName"
+        },
+        "ProfileResponseData": [
+          "FirstName"
+        ]
+      },
+      "Identifier": "0be9caca-99e1-4402-a963-c98f0d7b5ac9",
+      "Type": "GetCustomerProfile",
+      "Transitions": {
+        "NextAction": "8c218c01-319a-4a36-8850-83d122ca614a",
+        "Errors": [
+          {
+            "NextAction": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+            "ErrorType": "NoMatchingError"
+          },
+          {
+            "NextAction": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+            "ErrorType": "MultipleFoundError"
+          },
+          {
+            "NextAction": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+            "ErrorType": "NoneFoundError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "Text": "Hi, Welcome to Amazon connect partner bootcamp. Please wait while we connect with next available officer."
+      },
+      "Identifier": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "7e290aa2-92fb-4137-a0b0-64d2a746dff3",
+        "Errors": [
+          {
+            "NextAction": "7e290aa2-92fb-4137-a0b0-64d2a746dff3",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "Text": "Hi $.Customer.FirstName, Welcome to Amazon connect partner bootcamp. Please wait while we connect with next available officer."
+      },
+      "Identifier": "8c218c01-319a-4a36-8850-83d122ca614a",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "7e290aa2-92fb-4137-a0b0-64d2a746dff3",
+        "Errors": [
+          {
+            "NextAction": "7e290aa2-92fb-4137-a0b0-64d2a746dff3",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "ComparisonValue": "$.Channel"
+      },
+      "Identifier": "2ef04aa7-e993-46f9-afdd-7636dc920e30",
+      "Type": "Compare",
+      "Transitions": {
+        "NextAction": "1be30b26-516a-4a33-b1c2-cde79492857c",
+        "Conditions": [
+          {
+            "NextAction": "0be9caca-99e1-4402-a963-c98f0d7b5ac9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CHAT"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "1be30b26-516a-4a33-b1c2-cde79492857c",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "ProfileRequestData": {
+          "IdentifierName": "_phone",
+          "IdentifierValue": "$.Attributes.PhoneNumber"
+        },
+        "ProfileResponseData": [
+          "FirstName"
+        ]
+      },
+      "Identifier": "1be30b26-516a-4a33-b1c2-cde79492857c",
+      "Type": "GetCustomerProfile",
+      "Transitions": {
+        "NextAction": "8c218c01-319a-4a36-8850-83d122ca614a",
+        "Errors": [
+          {
+            "NextAction": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+            "ErrorType": "NoMatchingError"
+          },
+          {
+            "NextAction": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+            "ErrorType": "MultipleFoundError"
+          },
+          {
+            "NextAction": "43d96665-085d-4ee4-95a1-09bb04ebeb2c",
+            "ErrorType": "NoneFoundError"
+          }
+        ]
+      }
+    }
+  ]
+}
