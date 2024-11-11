@@ -1,0 +1,964 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Basic Connect Instance CFT
+#
+# Copyright 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+#=================================================================================================
+
+#=================================================================================================
+#Metadata:
+#=================================================================================================
+Resources:
+
+# AMAZON CONNECT AND SERVERLESS SECTION
+
+# Create Amazon Connect instance
+  AmazonConnectInstance:
+    Type: 'AWS::Connect::Instance'
+    Properties:
+      Attributes:
+        AutoResolveBestVoices: true
+        ContactflowLogs:  true
+        ContactLens:  true
+        EarlyMedia:  true
+        InboundCalls:  true
+        OutboundCalls:  true
+        UseCustomTTSVoices: false
+      IdentityManagementType: CONNECT_MANAGED
+      InstanceAlias: !Sub ws-${AWS::Region}-${AWS::AccountId}
+
+# S3 Bucket for Amazon Connect
+  AmazonConnectS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+          BucketName: !Sub
+            - 'qicbucket-${UUID}'
+            - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+          PublicAccessBlockConfiguration:
+              BlockPublicAcls: True
+              BlockPublicPolicy: True
+              IgnorePublicAcls: True
+              RestrictPublicBuckets: True
+          BucketEncryption:
+              ServerSideEncryptionConfiguration:
+                - ServerSideEncryptionByDefault: 
+                    SSEAlgorithm: 'AES256'
+
+# KMS Key
+  AmazonConnectKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMSKeyForConnect
+      Enabled: true
+      EnableKeyRotation: true  
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: connectkey1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - 'kms:*'
+            Resource: '*'
+
+# Configure Storage for Amazon Connect
+  AmazonConnectStorage:
+    Type: AWS::Connect::InstanceStorageConfig
+    DependsOn:
+      - AmazonConnectInstance
+      - AmazonConnectS3Bucket
+      - LambdaPreInfoFromConnect
+    Properties:
+      InstanceArn: !GetAtt AmazonConnectInstance.Arn
+      ResourceType: CALL_RECORDINGS
+      S3Config:
+        BucketName: !Ref AmazonConnectS3Bucket
+        BucketPrefix: recordings
+        EncryptionConfig:
+          EncryptionType: KMS
+          KeyId: !GetAtt AmazonConnectKey.Arn
+      StorageType: S3
+
+# Create Amazon connect S3 Bucket policy
+  AmazonConnectS3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    DependsOn:
+      - AmazonConnectStorage
+    Properties:
+      Bucket: !Ref AmazonConnectS3Bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:ListBucket'
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Resource: 
+              - !Sub "arn:aws:s3:::${AmazonConnectS3Bucket}"
+              - !Sub "arn:aws:s3:::${AmazonConnectS3Bucket}/*"              
+
+# IAM Role for lambda functions to create Connect Components
+  CoreIAMRole:
+    Type: "AWS::IAM::Role"
+    DependsOn:
+      - AmazonConnectInstance
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+                - "sts:AssumeRole"
+      Description: Required to Build Connect
+      Policies:
+        - PolicyName: Pre-BuildConnectComponents
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - connect:list*
+                  - connect:update*
+                  - connect:Disassociate*
+                  - connect:associate*
+                  - states:StartExecution
+                  - kms:ListAliases
+                Resource: 
+                  - "arn:aws:connect:*"
+                  - "arn:aws:kms:*"
+                  - "arn:aws:lambda:*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - "arn:aws:logs"
+
+# Create Supervisor Queue - SupervisorQueue
+  CreateSupervisorQueue:
+    Type: 'AWS::Connect::Queue'
+    DependsOn:
+      - LambdaInvokeConnectPreInfo
+      - AmazonConnectInstance
+    Properties:
+      Description: 'Supervisor Queue'
+      HoursOfOperationArn: !GetAtt LambdaInvokeConnectPreInfo.BasicHours
+      InstanceArn: !GetAtt AmazonConnectInstance.Arn
+      Name: 'SupervisorQueue'
+
+# Lambda function to get RoutingProfile and Security Profiles
+  LambdaPreInfoFromConnect:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Function to get Connect RoutingProfile and Security Profile
+      Environment:
+        Variables:
+          INSTANCEARN: !GetAtt AmazonConnectInstance.Arn
+      Code:
+        ZipFile: |
+          # MIT No Attribution
+
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+          # software and associated documentation files (the "Software"), to deal in the Software
+          # without restriction, including without limitation the rights to use, copy, modify,
+          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+          # permit persons to whom the Software is furnished to do so.
+
+          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+          import json
+          import boto3
+          import os
+          import cfnresponse
+
+          client = boto3.client('connect')
+          kms = boto3.client('kms')
+
+          InstanceArn= os.environ['INSTANCEARN']
+
+          # This Lambda retrieves the details required to create a Quick Connect to trasnsfer to the Basic Queue
+          def lambda_handler(event, context):
+              print(event)
+
+              if event['RequestType'] == 'Create':
+                  print(event)
+
+                  # List RoutingProfiles and Security Profiles
+                  try:
+                      InstanceId = InstanceArn[-36:]
+
+                      # List RPs
+                      responseListRPs = client.list_routing_profiles(
+                          InstanceId=InstanceId,
+                          MaxResults=1
+                      )
+
+                      print('>>> Returned Value responseListRPs :' + json.dumps(responseListRPs, indent=4, sort_keys=True, default=str))
+
+                      # List Queues
+                      responseListQueues = client.list_queues(
+                          InstanceId=InstanceId,
+                          QueueTypes=['STANDARD'],
+                          MaxResults=10
+                      )
+
+                      print('>>> Returned Value responseListQueues :' + json.dumps(responseListQueues, indent=4, sort_keys=True, default=str))
+
+                      # List Prompts
+                      responseListPrompts = client.list_prompts(
+                          InstanceId=InstanceId,
+                      )
+
+                      # List Hours Of Operations
+            
+                      responseHoursOfOperations = client.list_hours_of_operations(
+                          InstanceId=InstanceId,
+                      )
+                      
+                      print('>>> Returned Value responseHoursOfOperations :' + json.dumps(responseHoursOfOperations, indent=4, sort_keys=True, default=str))
+
+                      RPList = responseListRPs ["RoutingProfileSummaryList"]
+                      QList = responseListQueues ["QueueSummaryList"]
+                      PromptList = responseListPrompts ["PromptSummaryList"]
+                      HoursOfOperationSummaryList = responseHoursOfOperations ["HoursOfOperationSummaryList"]
+                      print(PromptList)
+
+                      for x in RPList:
+                          if x['Name'] == "Basic Routing Profile":
+                              BasicRPId=x['Id']
+                              print("BasicRPId= " + BasicRPId)
+                              BasicRPArn=x['Arn']
+                              print("BasicRPArn= " + BasicRPArn)
+
+                      for x in QList:
+                          if x['Name'] == "BasicQueue":
+                            BasicQueueArn=x['Arn']
+                            print("BasicQueueArn= " + BasicQueueArn)
+
+                      for x in PromptList:
+                          if x['Name'] == "CustomerQueue.wav":
+                              PromptArn=x['Arn']
+                              print("PromptArn= " + PromptArn)
+
+                      for x in HoursOfOperationSummaryList:
+                          if x['Name'] == "Basic Hours":
+                              BasicHoursArn=x['Arn']
+                              print("BasicHoursArn= " + BasicHoursArn)
+
+                      # List Security Profiles
+                      responseListSecProfiles = client.list_security_profiles(
+                          InstanceId=InstanceId,
+                          MaxResults=50
+                      )
+                      print(responseListSecProfiles)
+                      SecProfilesList = responseListSecProfiles ["SecurityProfileSummaryList"]
+
+                      for x in SecProfilesList:
+                          if x['Name'] == "Admin":
+                              AdminSecProfileArn=x['Arn']
+                              print("AdminSecProfileArn= " + AdminSecProfileArn)
+
+                      # List of contact flows
+                      responseListOfContactFlows = client.list_contact_flows(
+                          InstanceId=InstanceId,
+                          ContactFlowTypes=[
+                              'CONTACT_FLOW',
+                          ],
+                          MaxResults=123
+                      )
+                      CFSummaryList = responseListOfContactFlows ["ContactFlowSummaryList"]
+                      print('>>> Returned Value responseListOfContactFlows :' + json.dumps(CFSummaryList, indent=4, sort_keys=True, default=str))
+
+                      for x in CFSummaryList:
+                          if x['Name'] == "Sample recording behavior":
+                              ContactFlowArn=x['Arn']
+                              print("ContactFlowArn= " + ContactFlowArn)
+
+                      responseData = {}
+                      responseData['BasicRP'] = BasicRPArn
+                      responseData['SecProfile'] = AdminSecProfileArn
+                      responseData['BasicQueue'] = BasicQueueArn
+                      responseData['Prompt'] = PromptArn
+                      responseData['BasicHours'] = BasicHoursArn
+                      responseData['ContactFlowArn'] = ContactFlowArn
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+                      print(responseData)
+
+                  except Exception as a:
+                      print (a)
+                      return { 'message': 'Failed listing Queues and ContactFlows' }
+
+              else:
+                  responseData = {}
+                  responseData['Data'] = "Delete"
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+
+      Handler: index.lambda_handler
+      Role: !GetAtt CoreIAMRole.Arn
+      Runtime: python3.9
+# Run Lambda to Get Connect information
+  LambdaInvokeConnectPreInfo:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - LambdaPreInfoFromConnect
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaPreInfoFromConnect.Arn
+
+  FnAssignClaimedPhoneNumber:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Function to assign
+      Environment:
+        Variables:
+          INSTANCEARN: !GetAtt AmazonConnectInstance.Arn
+          PHONENUMBERARN: !GetAtt ConnectDid.PhoneNumberArn
+          CONTACTFLOWARN: !GetAtt LambdaInvokeConnectPreInfo.ContactFlowArn
+      Code:
+        ZipFile: |
+          # MIT No Attribution
+
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+          # software and associated documentation files (the "Software"), to deal in the Software
+          # without restriction, including without limitation the rights to use, copy, modify,
+          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+          # permit persons to whom the Software is furnished to do so.
+
+          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+          import json
+          import boto3
+          import os
+          import cfnresponse
+
+          client = boto3.client('connect')
+          kms = boto3.client('kms')
+
+          InstanceArn= os.environ['INSTANCEARN']
+          DidArn = os.environ['PHONENUMBERARN']
+          ContactFlowArn = os.environ['CONTACTFLOWARN']
+
+          def lambda_handler(event, context):
+
+            print(event)
+
+            if event['RequestType'] == 'Create':
+              try:
+                InstanceId = InstanceArn[-36:]
+                ContactFlowId = ContactFlowArn[-36:]
+                response = client.associate_phone_number_contact_flow(
+                  PhoneNumberId=DidArn,
+                  InstanceId=InstanceId,
+                  ContactFlowId=ContactFlowId
+                )
+
+                responseData = {}
+                responseData['response'] = response
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+                print(response)
+
+              except Exception as a:
+                print (a)
+                return { 'message': 'Failed listing Queues and ContactFlows' }
+
+            else:
+                responseData = {}
+                responseData['Data'] = "Delete"
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+
+      Handler: index.lambda_handler
+      Role: !GetAtt CoreIAMRole.Arn
+      Runtime: python3.9
+# Run Lambda to Get Connect information
+  InvokeAssignClaimedPhoneNumber:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - CreateSupervisorQueue
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt FnAssignClaimedPhoneNumber.Arn
+  ConnectDid:
+    Type: AWS::Connect::PhoneNumber
+    Properties:
+      CountryCode: 'US'
+      TargetArn: !GetAtt AmazonConnectInstance.Arn
+      Type: 'DID'
+  MainEntryFlow:
+    Type: AWS::Connect::ContactFlow
+    DependsOn: 
+    - LambdaInvokeConnectPreInfo
+    Properties:
+      Name: main-entry-flow
+      Type: CONTACT_FLOW
+      Description: main entry flow
+      InstanceArn: !Ref AmazonConnectInstance
+      # Content: "{\"Version\":\"2019-10-30\",\"StartAction\":\"3bb31b87-1091-4301-ba17-ac0c37a3c183\",\"Metadata\":{\"entryPointPosition\":{\"x\":-120.8,\"y\":30.4},\"ActionMetadata\":{\"df566c71-9556-4c5d-9636-319b4f8a0abb\":{\"position\":{\"x\":1516.8,\"y\":54.4}},\"e52ee71d-110b-4123-ab1f-68afb527188f\":{\"position\":{\"x\":1740.8,\"y\":58.4}},\"1a07bc6b-1e44-4b85-b043-e8c9235fb0be\":{\"position\":{\"x\":745.6,\"y\":426.4}},\"39bac757-c5d7-4000-94c7-844bef3adc03\":{\"position\":{\"x\":754.4,\"y\":647.2}},\"d9d2b0c2-8970-4304-85cc-5eb7b0368ec0\":{\"position\":{\"x\":968.8,\"y\":428.8}},\"eab3b028-0687-46d3-9cb1-2bd00af2cc51\":{\"position\":{\"x\":980.8,\"y\":650.4}},\"ec4e67ea-65db-4905-859b-033188b037bb\":{\"position\":{\"x\":1202.4,\"y\":429.6}},\"709e5cbb-6931-47e1-a215-70ebc9dce967\":{\"position\":{\"x\":1251.2,\"y\":650.4}},\"35388b44-ee54-422e-965f-9989c5a3d767\":{\"position\":{\"x\":1114.4,\"y\":255.2}},\"b062d486-fc4a-4d7f-bc96-e4c53d2c3535\":{\"position\":{\"x\":21.6,\"y\":451.2}},\"5320e6b8-4b1b-4c03-8684-eed034457406\":{\"position\":{\"x\":1286.4,\"y\":53.6}},\"1ef8acb6-050e-47e2-b711-eb406e435430\":{\"position\":{\"x\":815.2,\"y\":59.2}},\"8402223a-d58d-4f25-834e-5aa4458160ad\":{\"position\":{\"x\":1056.8,\"y\":54.4},\"parameters\":{\"FlowModuleId\":{\"useDynamic\":true}},\"useDynamic\":true},\"8bc431eb-7b4f-49b0-b367-945c89510b8f\":{\"position\":{\"x\":514.4,\"y\":166.4},\"conditions\":[],\"conditionMetadata\":[{\"id\":\"39a3aceb-6adc-45ee-ab91-f859a7f69acd\",\"operator\":{\"name\":\"Equals\",\"value\":\"Equals\",\"shortDisplay\":\"=\"},\"value\":\"UNIQUE_RECORD\"},{\"id\":\"ed3f13cb-5db7-47d0-88d0-de4df9fa1f38\",\"operator\":{\"name\":\"Equals\",\"value\":\"Equals\",\"shortDisplay\":\"=\"},\"value\":\"ERROR\"},{\"id\":\"ffeefe16-cabd-43c8-9712-1685fdcbf480\",\"operator\":{\"name\":\"Equals\",\"value\":\"Equals\",\"shortDisplay\":\"=\"},\"value\":\"MULTIPLE_RECORDS\"},{\"id\":\"a5aba14b-b06b-4ba7-b109-0b3da6f9506b\",\"operator\":{\"name\":\"Equals\",\"value\":\"Equals\",\"shortDisplay\":\"=\"},\"value\":\"NO_RECORDS\"}]},\"3bb31b87-1091-4301-ba17-ac0c37a3c183\":{\"position\":{\"x\":4.8,\"y\":167.2},\"dynamicParams\":[]},\"ea268c51-41b0-4586-8e56-829f24c6742a\":{\"position\":{\"x\":260,\"y\":168},\"parameters\":{\"FlowModuleId\":{\"useDynamic\":true}},\"useDynamic\":true}},\"Annotations\":[]},\"Actions\":[{\"Parameters\":{},\"Identifier\":\"df566c71-9556-4c5d-9636-319b4f8a0abb\",\"Type\":\"TransferContactToQueue\",\"Transitions\":{\"NextAction\":\"e52ee71d-110b-4123-ab1f-68afb527188f\",\"Errors\":[{\"NextAction\":\"e52ee71d-110b-4123-ab1f-68afb527188f\",\"ErrorType\":\"QueueAtCapacity\"},{\"NextAction\":\"e52ee71d-110b-4123-ab1f-68afb527188f\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{},\"Identifier\":\"e52ee71d-110b-4123-ab1f-68afb527188f\",\"Type\":\"DisconnectParticipant\",\"Transitions\":{}},{\"Parameters\":{\"Text\":\"I was not able to lookup a valid customer record. Please create a customer record with your phone number and try reaching out again.\"},\"Identifier\":\"1a07bc6b-1e44-4b85-b043-e8c9235fb0be\",\"Type\":\"MessageParticipant\",\"Transitions\":{\"NextAction\":\"39bac757-c5d7-4000-94c7-844bef3adc03\",\"Errors\":[{\"NextAction\":\"39bac757-c5d7-4000-94c7-844bef3adc03\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{},\"Identifier\":\"39bac757-c5d7-4000-94c7-844bef3adc03\",\"Type\":\"DisconnectParticipant\",\"Transitions\":{}},{\"Parameters\":{\"Text\":\"That phone number returned multiple records. This demonstration has not been setup to handle this. Please fix and reach out again.\"},\"Identifier\":\"d9d2b0c2-8970-4304-85cc-5eb7b0368ec0\",\"Type\":\"MessageParticipant\",\"Transitions\":{\"NextAction\":\"eab3b028-0687-46d3-9cb1-2bd00af2cc51\",\"Errors\":[{\"NextAction\":\"eab3b028-0687-46d3-9cb1-2bd00af2cc51\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{},\"Identifier\":\"eab3b028-0687-46d3-9cb1-2bd00af2cc51\",\"Type\":\"DisconnectParticipant\",\"Transitions\":{}},{\"Parameters\":{\"Text\":\"I encountered an error while querying for this customer record. Please fix and reach out again. \"},\"Identifier\":\"ec4e67ea-65db-4905-859b-033188b037bb\",\"Type\":\"MessageParticipant\",\"Transitions\":{\"NextAction\":\"709e5cbb-6931-47e1-a215-70ebc9dce967\",\"Errors\":[{\"NextAction\":\"709e5cbb-6931-47e1-a215-70ebc9dce967\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{},\"Identifier\":\"709e5cbb-6931-47e1-a215-70ebc9dce967\",\"Type\":\"DisconnectParticipant\",\"Transitions\":{}},{\"Parameters\":{},\"Identifier\":\"35388b44-ee54-422e-965f-9989c5a3d767\",\"Type\":\"DisconnectParticipant\",\"Transitions\":{}},{\"Parameters\":{},\"Identifier\":\"b062d486-fc4a-4d7f-bc96-e4c53d2c3535\",\"Type\":\"DisconnectParticipant\",\"Transitions\":{}},{\"Parameters\":{\"Text\":\"Hold on while I get someone to help you.\"},\"Identifier\":\"5320e6b8-4b1b-4c03-8684-eed034457406\",\"Type\":\"MessageParticipant\",\"Transitions\":{\"NextAction\":\"df566c71-9556-4c5d-9636-319b4f8a0abb\",\"Errors\":[{\"NextAction\":\"df566c71-9556-4c5d-9636-319b4f8a0abb\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{\"Text\":\"Hello $.Attributes.FirstName \"},\"Identifier\":\"1ef8acb6-050e-47e2-b711-eb406e435430\",\"Type\":\"MessageParticipant\",\"Transitions\":{\"NextAction\":\"8402223a-d58d-4f25-834e-5aa4458160ad\",\"Errors\":[{\"NextAction\":\"35388b44-ee54-422e-965f-9989c5a3d767\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{\"FlowModuleId\":\"$.Attributes.Workshop-mod-fetch-customer-data-01\"},\"Identifier\":\"8402223a-d58d-4f25-834e-5aa4458160ad\",\"Type\":\"InvokeFlowModule\",\"Transitions\":{\"NextAction\":\"5320e6b8-4b1b-4c03-8684-eed034457406\",\"Errors\":[{\"NextAction\":\"5320e6b8-4b1b-4c03-8684-eed034457406\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{\"ComparisonValue\":\"$.Attributes.retrieval_status\"},\"Identifier\":\"8bc431eb-7b4f-49b0-b367-945c89510b8f\",\"Type\":\"Compare\",\"Transitions\":{\"NextAction\":\"1a07bc6b-1e44-4b85-b043-e8c9235fb0be\",\"Conditions\":[{\"NextAction\":\"1ef8acb6-050e-47e2-b711-eb406e435430\",\"Condition\":{\"Operator\":\"Equals\",\"Operands\":[\"UNIQUE_RECORD\"]}},{\"NextAction\":\"ec4e67ea-65db-4905-859b-033188b037bb\",\"Condition\":{\"Operator\":\"Equals\",\"Operands\":[\"ERROR\"]}},{\"NextAction\":\"d9d2b0c2-8970-4304-85cc-5eb7b0368ec0\",\"Condition\":{\"Operator\":\"Equals\",\"Operands\":[\"MULTIPLE_RECORDS\"]}},{\"NextAction\":\"1a07bc6b-1e44-4b85-b043-e8c9235fb0be\",\"Condition\":{\"Operator\":\"Equals\",\"Operands\":[\"NO_RECORDS\"]}}],\"Errors\":[{\"NextAction\":\"1a07bc6b-1e44-4b85-b043-e8c9235fb0be\",\"ErrorType\":\"NoMatchingCondition\"}]}},{\"Parameters\":{\"Attributes\":{\"Workshop-mod-id-customer-01\":\"b9b59d4a-a44c-427a-afac-c9e532d2049f\",\"fn_order_processor\":\"rn:aws:lambda:us-east-1:468598323933:function:setup-FnConnectReqHandler\",\"Workshop-mod-fetch-customer-data-01\":\"f2a3569f-0f08-45c8-9b01-74daaa8f1c2e\"},\"TargetContact\":\"Current\"},\"Identifier\":\"3bb31b87-1091-4301-ba17-ac0c37a3c183\",\"Type\":\"UpdateContactAttributes\",\"Transitions\":{\"NextAction\":\"ea268c51-41b0-4586-8e56-829f24c6742a\",\"Errors\":[{\"NextAction\":\"b062d486-fc4a-4d7f-bc96-e4c53d2c3535\",\"ErrorType\":\"NoMatchingError\"}]}},{\"Parameters\":{\"FlowModuleId\":\"$.Attributes.mod-id-customer-01\"},\"Identifier\":\"ea268c51-41b0-4586-8e56-829f24c6742a\",\"Type\":\"InvokeFlowModule\",\"Transitions\":{\"NextAction\":\"8bc431eb-7b4f-49b0-b367-945c89510b8f\",\"Errors\":[{\"NextAction\":\"8bc431eb-7b4f-49b0-b367-945c89510b8f\",\"ErrorType\":\"NoMatchingError\"}]}}]}"
+      Content: !Sub |
+              {
+                "Version": "2019-10-30",
+                "StartAction": "8087b6a0-5d74-4f2b-a4de-eb0c05443508",
+                "Metadata": {
+                  "entryPointPosition": {
+                    "x": 40,
+                    "y": 40
+                  },
+                  "ActionMetadata": {
+                    "4586f887-2b78-4842-94d1-5e6989487035": {
+                      "position": {
+                        "x": 948.8,
+                        "y": 114.4
+                      }
+                    },
+                    "8087b6a0-5d74-4f2b-a4de-eb0c05443508": {
+                      "position": {
+                        "x": 167.2,
+                        "y": 108
+                      }
+                    },
+                    "57af2855-2d83-4a8f-8645-54047f8e4cbd": {
+                      "position": {
+                        "x": 521.6,
+                        "y": 72
+                      }
+                    }
+                  },
+                  "Annotations": [],
+                  "name": "MyContactFlow",
+                  "type": "contactFlow",
+                  "status": "published",
+                  "hash": {}
+                },
+                "Actions": [
+                  {
+                    "Parameters": {},
+                    "Identifier": "4586f887-2b78-4842-94d1-5e6989487035",
+                    "Type": "DisconnectParticipant",
+                    "Transitions": {}
+                  },
+                  {
+                    "Parameters": {
+                      "FlowLoggingBehavior": "Enabled"
+                    },
+                    "Identifier": "8087b6a0-5d74-4f2b-a4de-eb0c05443508",
+                    "Type": "UpdateFlowLoggingBehavior",
+                    "Transitions": {
+                      "NextAction": "57af2855-2d83-4a8f-8645-54047f8e4cbd"
+                    }
+                  },
+                  {
+                    "Parameters": {
+                      "Text": "Hello! You have successfully deployed Amazon Connect."
+                    },
+                    "Identifier": "57af2855-2d83-4a8f-8645-54047f8e4cbd",
+                    "Type": "MessageParticipant",
+                    "Transitions": {
+                      "NextAction": "4586f887-2b78-4842-94d1-5e6989487035",
+                      "Errors": [
+                        {
+                          "NextAction": "4586f887-2b78-4842-94d1-5e6989487035",
+                          "ErrorType": "NoMatchingError"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+
+# Run Lambda to Get Connect information
+  LambdaToGetQueuesArnsPreInfo:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - InvokeAssignClaimedPhoneNumber
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaToGetQueuesArns.Arn
+
+# Lambda function to get Lambda to get basic queue and supervisor queue ARN's
+  LambdaToGetQueuesArns:
+    Type: AWS::Lambda::Function
+    #DependsOn:
+      #- LambdaToGetQueuesArnsPreInfo
+    Properties:
+      Description: Function to get get basic queue and supervisor queue ARN's
+      Environment:
+        Variables:
+          INSTANCEARN: !GetAtt AmazonConnectInstance.Arn
+      Code:
+        ZipFile: |
+          # MIT No Attribution
+
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+          # software and associated documentation files (the "Software"), to deal in the Software
+          # without restriction, including without limitation the rights to use, copy, modify,
+          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+          # permit persons to whom the Software is furnished to do so.
+
+          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+          import json
+          import boto3
+          import os
+          import cfnresponse
+
+          client = boto3.client('connect')
+          kms = boto3.client('kms')
+
+          InstanceArn= os.environ['INSTANCEARN']
+
+          # This Lambda retrieves the details required to create a Quick Connect to trasnsfer to the Basic Queue
+          def lambda_handler(event, context):
+              print(event)
+
+              if event['RequestType'] == 'Create':
+                  print(event)
+
+                  # List RoutingProfiles and Security Profiles
+                  try:
+                      InstanceId = InstanceArn[-36:]
+
+                      # List Queues
+                      responseListQueues = client.list_queues(
+                          InstanceId=InstanceId,
+                          QueueTypes=['STANDARD'],
+                          MaxResults=10
+                      )
+
+                      print('>>> Returned Value responseListQueues :' + json.dumps(responseListQueues, indent=4, sort_keys=True, default=str))
+                      
+                      QList = responseListQueues ["QueueSummaryList"]                      
+                      
+                      for x in QList:
+                          if x['Name'] == "BasicQueue":
+                            BasicQueueArn=x['Arn']
+                            print("BasicQueueArn= " + BasicQueueArn)
+                          if x['Name'] == "SupervisorQueue":
+                            SupervisorQueueArn=x['Arn']
+                            print("SupervisorQueueArn= " + SupervisorQueueArn)
+
+                      responseData = {}
+                      responseData['BasicQueue'] = BasicQueueArn
+                      responseData['SupervisorQueue'] = SupervisorQueueArn
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+                      print(responseData)
+
+                  except Exception as a:
+                      print (a)
+                      return { 'message': 'Failed listing Queues and ContactFlows' }
+
+              else:
+                  responseData = {}
+                  responseData['Data'] = "Delete"
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+
+      Handler: index.lambda_handler
+      Role: !GetAtt CoreIAMRole.Arn
+      Runtime: python3.9
+
+#Create supervisor routing profile
+  CreateSupervisorRP:
+    Type: 'AWS::Connect::RoutingProfile'
+    DependsOn:
+      - LambdaToGetQueuesArnsPreInfo
+    Properties:
+      Description: 'Supervisor routing profile for task management, silent monitoring, and barging'      
+      InstanceArn: !GetAtt AmazonConnectInstance.Arn
+      Name: 'Supervisor Routing Profile'
+      DefaultOutboundQueueArn: !GetAtt LambdaToGetQueuesArnsPreInfo.BasicQueue
+      MediaConcurrencies:
+        - Channel: 'VOICE'
+          Concurrency: '1'
+        - Channel: 'CHAT'
+          Concurrency: '1'
+        - Channel: 'TASK'
+          Concurrency: '1'
+      QueueConfigs:
+        - Priority: 1
+          Delay: 0
+          QueueReference:
+            Channel: 'VOICE'
+            QueueArn: !GetAtt LambdaToGetQueuesArnsPreInfo.SupervisorQueue 
+        - Priority: 1
+          Delay: 0
+          QueueReference:
+            Channel: 'VOICE'
+            QueueArn: !GetAtt LambdaToGetQueuesArnsPreInfo.BasicQueue
+
+# Create agent - johndoe
+  CreateAgent:
+    Type: 'AWS::Connect::User'
+    DependsOn:
+      - CreateSupervisorRP
+      - AmazonConnectInstance
+    Properties:
+      IdentityInfo:
+        FirstName: 'John'
+        LastName: 'Doe'
+        Email: 'john.doe@email.com'
+      PhoneConfig:
+        PhoneType: 'SOFT_PHONE'
+      Username: 'johndoe'
+      InstanceArn: !GetAtt AmazonConnectInstance.Arn
+      RoutingProfileArn: !GetAtt LambdaInvokeConnectPreInfo.BasicRP
+      SecurityProfileArns: [!GetAtt LambdaInvokeConnectPreInfo.SecProfile]
+      Password: "Workshop1234"
+
+# Create Admin user
+  AdminUser:
+    Type: 'AWS::Connect::User'
+    DependsOn:
+      - CreateSupervisorRP
+      - AmazonConnectInstance
+    Properties:
+      IdentityInfo:
+        FirstName: 'Supervisor'
+        LastName: 'First'
+        Email: 'admin.user@email.com'
+      PhoneConfig:
+        PhoneType: 'SOFT_PHONE'
+      Username: 'supervisor1'
+      InstanceArn: !GetAtt AmazonConnectInstance.Arn
+      RoutingProfileArn: !GetAtt CreateSupervisorRP.RoutingProfileArn
+      SecurityProfileArns: [!GetAtt LambdaInvokeConnectPreInfo.SecProfile]
+      Password: "Workshop1234"
+
+# Run Lambda function to disassociate task channel from basic queue in basic routing profile
+  LambdaToAssAndDisAssChannelsFromQueuesInRPPreInfo:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - AdminUser
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaToAssAndDisAssChannelsFromQueuesInRP.Arn
+
+# Lambda function to disassociate task channel from basic queue in basic routing profile
+  LambdaToAssAndDisAssChannelsFromQueuesInRP:
+    Type: AWS::Lambda::Function
+    #DependsOn:
+      #- AdminUser
+    Properties:
+      Description: Function to disassociate task channel from basic queue in basic routing profile
+      Environment:
+        Variables:
+          INSTANCEARN: !GetAtt AmazonConnectInstance.Arn
+      Code:
+        ZipFile: |
+          # MIT No Attribution
+
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+          # software and associated documentation files (the "Software"), to deal in the Software
+          # without restriction, including without limitation the rights to use, copy, modify,
+          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+          # permit persons to whom the Software is furnished to do so.
+
+          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+          import json
+          import boto3
+          import os
+          import cfnresponse
+          import urllib.request
+
+          client = boto3.client('connect')
+          kms = boto3.client('kms')
+
+          InstanceArn= os.environ['INSTANCEARN']
+
+          # This Lambda retrieves the details required to create a Quick Connect to trasnsfer to the Basic Queue
+          def lambda_handler(event, context):
+              print(event)
+
+              if event['RequestType'] == 'Create':
+                  print(event)
+
+                  # List RoutingProfiles and Security Profiles
+                  try:
+                      InstanceId = InstanceArn[-36:]                      
+
+                      api_url = "https://9bed2zpud1.execute-api.ap-southeast-1.amazonaws.com/prod"
+            
+                      request_data = {
+                          "data": InstanceArn
+                      }
+                      
+                      json_data = json.dumps(request_data).encode('utf-8')
+
+                      # Set headers to indicate that we're sending JSON
+                      headers = {
+                          'Content-Type': 'application/json',
+                          'Accept': 'application/json',
+                          # Add any other headers if needed (e.g., authorization headers)
+                      }
+
+                      try:
+                        # Create the request
+                        req = urllib.request.Request(api_url, data=json_data, headers=headers, method='POST')
+                
+                        # Make the API request
+                        with urllib.request.urlopen(req) as response:
+                            # Read and decode the response
+                            data = response.read().decode('utf-8')
+                            print('>>> SaveARNTo CommonDB API response :' + json.dumps(data, indent=4, sort_keys=True, default=str)) 
+                    
+                      except urllib.error.URLError as e:
+                          # Handle errors (e.g., network issues, invalid URL)
+                          print('>>> SaveARNTo Error calling API :' + json.dumps(e, indent=4, sort_keys=True, default=str)) 
+
+                      # List RPs
+                      responseListRPs = client.list_routing_profiles(
+                          InstanceId=InstanceId,
+                          MaxResults=10
+                      )
+
+                      print('>>> Returned Value responseListRPs :' + json.dumps(responseListRPs, indent=4, sort_keys=True, default=str))
+                      
+                      # List Queues
+                      responseListQueues = client.list_queues(
+                          InstanceId=InstanceId,
+                          QueueTypes=['STANDARD'],
+                          MaxResults=10
+                      )
+
+                      print('>>> Returned Value responseListQueues :' + json.dumps(responseListQueues, indent=4, sort_keys=True, default=str))
+            
+                      RPList = responseListRPs ["RoutingProfileSummaryList"]
+                      QList = responseListQueues ["QueueSummaryList"]
+                      
+                      for x in RPList:
+                        if x['Name'] == "Basic Routing Profile":
+                            BasicRPId=x['Id']
+                            print("BasicRPId= " + BasicRPId)
+                            BasicRPArn=x['Arn']
+                            print("BasicRPArn= " + BasicRPArn)
+                        if x['Name'] == "Supervisor Routing Profile":
+                            SupervisorRPId=x['Id']
+                            print("SupervisorRPId= " + SupervisorRPId)
+                            SupervisorRPArn=x['Arn']
+                            print("SupervisorRPArn= " + SupervisorRPArn)                            
+                            
+                      for x in QList:
+                        if x['Name'] == "BasicQueue":
+                            BasicQueueArn=x['Arn']
+                            print("BasicQueueArn= " + BasicQueueArn)
+                            BasicQueueId=x['Id']
+                            print("BasicQueueId= " + BasicQueueId)
+                        if x['Name'] == "SupervisorQueue":
+                            SupervisorQueueArn=x['Arn']
+                            print("SupervisorQueueArn= " + SupervisorQueueArn)
+                            SupervisorQueueId=x['Id']
+                            print("SupervisorQueueId= " + SupervisorQueueId)
+
+                      response = client.disassociate_routing_profile_queues(
+                          InstanceId=InstanceId,
+                          RoutingProfileId=BasicRPId,
+                          QueueReferences=[
+                              {
+                                  'QueueId': BasicQueueId,
+                                  'Channel': 'TASK'
+                              },
+                          ]
+                      )
+
+                      response = client.associate_routing_profile_queues(
+                          InstanceId=InstanceId,
+                          RoutingProfileId=SupervisorRPId,
+                          QueueConfigs=[
+                              {
+                                  'QueueReference': {
+                                      'QueueId': BasicQueueId,
+                                      'Channel': 'CHAT'
+                                  },
+                                  'Priority': 1,
+                                  'Delay': 0
+                              },
+                          ]
+                      )
+
+                      response = client.associate_routing_profile_queues(
+                          InstanceId=InstanceId,
+                          RoutingProfileId=SupervisorRPId,
+                          QueueConfigs=[
+                              {
+                                  'QueueReference': {
+                                      'QueueId': SupervisorQueueId,
+                                      'Channel': 'CHAT'
+                                  },
+                                  'Priority': 1,
+                                  'Delay': 0
+                              },
+                          ]
+                      )
+
+                      response = client.associate_routing_profile_queues(
+                          InstanceId=InstanceId,
+                          RoutingProfileId=SupervisorRPId,
+                          QueueConfigs=[
+                              {
+                                  'QueueReference': {
+                                      'QueueId': SupervisorQueueId,
+                                      'Channel': 'TASK'
+                                  },
+                                  'Priority': 1,
+                                  'Delay': 0
+                              },
+                          ]
+                      )
+
+                      # List Security Profiles
+                      responseListSecProfiles = client.list_security_profiles(
+                          InstanceId=InstanceId,
+                          MaxResults=50
+                      )
+                      print('>>> Returned Value responseListSecProfiles :' + json.dumps(responseListSecProfiles, indent=4, sort_keys=True, default=str))
+
+                      SecProfilesList = responseListSecProfiles ["SecurityProfileSummaryList"]
+
+                      for x in SecProfilesList:
+                        if x['Name'] == "Admin":
+                            AdminSecProfileArn=x['Arn']
+                            print("AdminSecProfileArn= " + AdminSecProfileArn)
+                        if x['Name'] == "Agent":
+                            AgentSecProfileArn=x['Arn']
+                            print("AgentSecProfileArn= " + AgentSecProfileArn)
+                        if x['Name'] == "CallCenterManager":
+                            CallCenterManagerSecProfileArn=x['Arn']
+                            print("CallCenterManagerSecProfileArn= " + CallCenterManagerSecProfileArn)
+                        if x['Name'] == "QualityAnalyst":
+                            QualityAnalystSecProfileArn=x['Arn']
+                            print("QualityAnalystSecProfileArn= " + QualityAnalystSecProfileArn)
+                      
+                      responseUsersList = client.list_users(
+                          InstanceId=InstanceId,
+                          MaxResults=123
+                      )
+                      print('>>> Returned Value responseUsersList :' + json.dumps(responseUsersList, indent=4, sort_keys=True, default=str))
+                      UsersList = responseUsersList ["UserSummaryList"]
+
+                      for x in UsersList:
+                        if x['Username'] == "johndoe":
+                          johndoeId=x['Id']
+                          print("johndoeId= " + johndoeId)
+                        if x['Username'] == "supervisor1":
+                          supervisorId=x['Id']
+                          print("supervisorId= " + supervisorId)
+
+                      response = client.update_user_security_profiles(
+                          SecurityProfileIds=[
+                              AgentSecProfileArn,
+                              CallCenterManagerSecProfileArn,
+                              AdminSecProfileArn
+                          ],
+                          UserId=supervisorId,
+                          InstanceId=InstanceId
+                      )
+
+                      response = client.update_user_security_profiles(
+                          SecurityProfileIds=[
+                              AgentSecProfileArn
+                          ],
+                          UserId=johndoeId,
+                          InstanceId=InstanceId
+                      )
+
+                      responseData = {}
+                      responseData['BasicQueue'] = BasicQueueArn
+                      responseData['SupervisorQueue'] = SupervisorQueueArn
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+                      print(responseData)
+                  except Exception as a:
+                      print (a)
+                      return { 'message': 'Failed listing Queues and ContactFlows' }
+
+              else:
+                  responseData = {}
+                  responseData['Data'] = "Delete"
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+
+      Handler: index.lambda_handler
+      Role: !GetAtt CoreIAMRole.Arn
+      Runtime: python3.9
+      Timeout: 60
+  
+#=================================================================================================
+# Outputs 
+#=================================================================================================
+Outputs:
+    InstanceUrl:
+      Description: "Amazon Connect URL"
+      Value: !Join 
+        - ''
+        - - 'https://ws-'
+          - !Ref "AWS::Region"
+          - !Ref "AWS::AccountId"
+          - '.my.connect.aws'
+    InstanceAlias:
+      Description: "Amazon Connect Instance Alias"
+      Value: !Join 
+        - ''
+        - - 'ws-'
+          - !Ref "AWS::Region"
+          - !Ref "AWS::AccountId"
+    AdminUsername:
+      Description: 'Amazon Connect Admin Username'
+      Value: 'supervisor1'
+    AdminPassword:
+      Description: 'Amazon Connect Admin Password'
+      Value: 'Workshop1234'
+    AgentUsername:
+      Description: 'Amazon Connect agent Username'
+      Value: 'johndoe'
+    AgentPassword:
+      Description: 'Amazon Connect agent Password'
+      Value: 'Workshop1234'
+    MainPhoneNumber:
+      Description: 'Main Phone Number'
+      Value: !GetAtt ConnectDid.Address
