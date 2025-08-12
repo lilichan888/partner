@@ -1,0 +1,289 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "8087b6a0-5d74-4f2b-a4de-eb0c05443508",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "3f5e4048-b2e0-4c86-9de8-bf04587c8893": {
+        "position": {
+          "x": 255.2,
+          "y": 230.4
+        },
+        "children": [
+          "8e01c983-3ec1-4f0d-8605-96bfebd5d53c"
+        ],
+        "parameters": {
+          "WisdomAssistantArn": {
+            "displayName": "arn:aws:wisdom:ap-southeast-1:775434933021:assistant/f3219e54-9553-4d76-9398-a9dae6bc3afb"
+          }
+        },
+        "fragments": {
+          "SetContactData": "8e01c983-3ec1-4f0d-8605-96bfebd5d53c"
+        }
+      },
+      "8e01c983-3ec1-4f0d-8605-96bfebd5d53c": {
+        "position": {
+          "x": 255.2,
+          "y": 230.4
+        },
+        "dynamicParams": []
+      },
+      "8087b6a0-5d74-4f2b-a4de-eb0c05443508": {
+        "position": {
+          "x": 39.2,
+          "y": 177.6
+        }
+      },
+      "700f36fc-5cb1-4595-bfa0-a8f4b3e2dfcb": {
+        "position": {
+          "x": 1241.6,
+          "y": 387.2
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "BasicQueue"
+          }
+        },
+        "queue": {
+          "text": "BasicQueue"
+        }
+      },
+      "db8f2c7d-5b38-422f-ad18-99042f16da71": {
+        "position": {
+          "x": 1479.2,
+          "y": 380
+        }
+      },
+      "4586f887-2b78-4842-94d1-5e6989487035": {
+        "position": {
+          "x": 1698.4,
+          "y": 419.2
+        }
+      },
+      "bd3f8aa4-4570-45e3-87fa-c7b6af2661c4": {
+        "position": {
+          "x": 493.6,
+          "y": 240.8
+        }
+      },
+      "57af2855-2d83-4a8f-8645-54047f8e4cbd": {
+        "position": {
+          "x": 980.8,
+          "y": 380
+        }
+      },
+      "22edeb54-6459-4d07-b2bd-e0b7af1d9d58": {
+        "position": {
+          "x": 715.2,
+          "y": 331.2
+        },
+        "dynamicParams": []
+      },
+      "8f142b37-24f6-4f16-86d8-7fe61cb7ae2d": {
+        "position": {
+          "x": 735.2,
+          "y": 544
+        },
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "qic-session-lambda-stack-lambda-function"
+          }
+        },
+        "dynamicMetadata": {}
+      }
+    },
+    "Annotations": [],
+    "name": "MainEntryFlow",
+    "description": "main entry flow",
+    "type": "contactFlow",
+    "status": "PUBLISHED",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {
+        "WisdomAssistantArn": "arn:aws:wisdom:ap-southeast-1:775434933021:assistant/f3219e54-9553-4d76-9398-a9dae6bc3afb"
+      },
+      "Identifier": "3f5e4048-b2e0-4c86-9de8-bf04587c8893",
+      "Type": "CreateWisdomSession",
+      "Transitions": {
+        "NextAction": "8e01c983-3ec1-4f0d-8605-96bfebd5d53c",
+        "Errors": [
+          {
+            "NextAction": "bd3f8aa4-4570-45e3-87fa-c7b6af2661c4",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "WisdomSessionArn": "$.Wisdom.SessionArn"
+      },
+      "Identifier": "8e01c983-3ec1-4f0d-8605-96bfebd5d53c",
+      "Type": "UpdateContactData",
+      "Transitions": {
+        "NextAction": "bd3f8aa4-4570-45e3-87fa-c7b6af2661c4",
+        "Errors": [
+          {
+            "NextAction": "bd3f8aa4-4570-45e3-87fa-c7b6af2661c4",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "FlowLoggingBehavior": "Enabled"
+      },
+      "Identifier": "8087b6a0-5d74-4f2b-a4de-eb0c05443508",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": {
+        "NextAction": "3f5e4048-b2e0-4c86-9de8-bf04587c8893"
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:ap-southeast-1:775434933021:instance/da9e10d8-e669-43cf-8f8b-2aa670f23f1f/queue/7e81dad8-4e83-48c6-a678-4909e3a14933"
+      },
+      "Identifier": "700f36fc-5cb1-4595-bfa0-a8f4b3e2dfcb",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "db8f2c7d-5b38-422f-ad18-99042f16da71",
+        "Errors": [
+          {
+            "NextAction": "db8f2c7d-5b38-422f-ad18-99042f16da71",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "db8f2c7d-5b38-422f-ad18-99042f16da71",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "4586f887-2b78-4842-94d1-5e6989487035",
+        "Errors": [
+          {
+            "NextAction": "4586f887-2b78-4842-94d1-5e6989487035",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "4586f887-2b78-4842-94d1-5e6989487035",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "4586f887-2b78-4842-94d1-5e6989487035",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "RecordingBehavior": {
+          "RecordedParticipants": [
+            "Agent",
+            "Customer"
+          ],
+          "IVRRecordingBehavior": "Enabled"
+        },
+        "AnalyticsBehavior": {
+          "Enabled": "True",
+          "AnalyticsLanguage": "en-GB",
+          "AnalyticsRedactionBehavior": "Disabled",
+          "AnalyticsRedactionResults": "RedactedAndOriginal",
+          "ChannelConfiguration": {
+            "Chat": {
+              "AnalyticsModes": [
+                "ContactLens"
+              ]
+            },
+            "Voice": {
+              "AnalyticsModes": [
+                "RealTime"
+              ]
+            }
+          },
+          "SummaryConfiguration": {
+            "SummaryModes": [
+              "PostContact"
+            ]
+          },
+          "SentimentConfiguration": {
+            "Enabled": "True"
+          }
+        }
+      },
+      "Identifier": "bd3f8aa4-4570-45e3-87fa-c7b6af2661c4",
+      "Type": "UpdateContactRecordingBehavior",
+      "Transitions": {
+        "NextAction": "22edeb54-6459-4d07-b2bd-e0b7af1d9d58"
+      }
+    },
+    {
+      "Parameters": {
+        "Text": "Welcome to my Bank !"
+      },
+      "Identifier": "57af2855-2d83-4a8f-8645-54047f8e4cbd",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "700f36fc-5cb1-4595-bfa0-a8f4b3e2dfcb",
+        "Errors": [
+          {
+            "NextAction": "700f36fc-5cb1-4595-bfa0-a8f4b3e2dfcb",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "Attributes": {
+          "productId": "Secured Credit Builder Card",
+          "creditScore": "762",
+          "spendingProfile": "Frequent traveler with an upcoming international trip planned"
+        },
+        "TargetContact": "Current"
+      },
+      "Identifier": "22edeb54-6459-4d07-b2bd-e0b7af1d9d58",
+      "Type": "UpdateContactAttributes",
+      "Transitions": {
+        "NextAction": "8f142b37-24f6-4f16-86d8-7fe61cb7ae2d",
+        "Errors": [
+          {
+            "NextAction": "8f142b37-24f6-4f16-86d8-7fe61cb7ae2d",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:ap-southeast-1:775434933021:function:qic-session-lambda-stack-lambda-function",
+        "InvocationTimeLimitSeconds": "3",
+        "InvocationType": "SYNCHRONOUS",
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Identifier": "8f142b37-24f6-4f16-86d8-7fe61cb7ae2d",
+      "Type": "InvokeLambdaFunction",
+      "Transitions": {
+        "NextAction": "57af2855-2d83-4a8f-8645-54047f8e4cbd",
+        "Errors": [
+          {
+            "NextAction": "57af2855-2d83-4a8f-8645-54047f8e4cbd",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}
